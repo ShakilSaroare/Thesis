@@ -1,0 +1,118 @@
+data<-read.table("dse1.txt",header=T)
+data<-data[1886:1,]
+attach(data)
+data<-data$DSE_General_Index
+
+data1<-read.table("dse1.txt",header=T)
+data1<-data1[2072:1,]
+attach(data1)
+data1<-data1$DSE_General_Index
+
+
+
+dse<-c()
+for(i in 1:length(data)-1){
+dse[i]<-100*log(data[i+1]/data[i])
+}
+
+b<-seq(-5,5,0.5)
+g<-c()
+for(i in 1:length(b)-1){
+g[i]<-(b[i+1]+b[i])/2
+}
+
+wl.pn2pw <-function(sigma0,beta0,phi0,rho0)
+ {
+tbeta<-log(beta0) 
+tsigma <- log(sigma0)
+tphi<-log((1+phi0)/(1-phi0))
+trho<-log((1+phi0)/(1-phi0))
+parvect <- c(tbeta,tsigma,tphi,trho)
+parvect
+ }
+
+wl.pw2pn<-function(parvect){
+beta<-exp(parvect[1])
+sigma<-exp(parvect[2])
+phi<-(exp(parvect[3])-1)/(exp(parvect[3])+1)
+rho<-(exp(parvect[4])-1)/(exp(parvect[4])+1)
+list(beta=beta,sigma=sigma,phi=phi,rho=rho)
+}
+
+
+wl.mllk<-function(x,m,b,g,par){
+pr<-wl.pw2pn(par)
+phi<-pr$phi
+sigma<-pr$sigma
+beta<-pr$beta
+rho<- pr$rho
+#delta <-solve(t(diag(m)-gamma()+1),rep(1,m))
+delta<-integrate(dnorm,mean=0,sd=(sigma/(1-phi^2)),upper=g[1]+0.005,lower=g[1]-0.005)
+foo<-delta
+lscale<-0
+for(i in 1:length(x)){
+gamma<-matrix(0,nrow=length(g),ncol=(length(b)-1))
+for(k in 1:length(g)){
+    for(j in 1:(length(b)-1)){
+         gamma[k,j] <- pnorm((b[j+1]-phi*g[k]-(rho*sigma*x[i])/(beta*exp(g[k]/2)))/(sigma*sqrt(1-rho^2)))
+                    pnorm((b[j]-phi*g[k]-(rho*sigma*x[i])/(beta*exp(g[k]/2)))/(sigma*sqrt(1-rho^2)))
+     }
+  } 
+tgamma <- NULL
+ if(m>1)
+ {
+ foo <- log(gamma/diag(gamma))
+ tgamma <- as.vector(foo[!diag(m)])
+ } 
+gamma <- diag(m)
+ if(m >1)
+ {
+ gamma [! gamma]<-exp(tgamma)
+ gamma <-gamma/apply(gamma,1,sum)
+ }
+p<-diag(m)
+for(j in 1:m){
+#p[j,j]<-dnorm(x[i],0,beta^2*exp(g[j]))
+p[j,j]<-integrate(dnorm,mean=0,sd=sqrt(beta^2*exp(g[j])),upper=x[i]+0.005,lower=x[i]-0.005)$value
+}
+foo<-foo%*%gamma%*%p
+sumfoo<-sum(foo)
+lscale<-lscale+log(sumfoo)
+foo<-foo/sum(foo)
+}
+mllk<- -lscale
+mllk
+}
+
+
+wl.mle<-function(x,beta0,sigma0,phi0,b,g,m,rho0){
+n<-length(x)
+start<-wl.pn2pw(sigma0,beta0,phi0,rho0)
+mod<-nlm(f=wl.mllk,p=start,x=dse,m=length(g),b=b,g=g)
+mllk <- mod$minimum
+ code <- mod$code
+ p <- wl.pw2pn(mod$estimate)
+ np <- 3
+ AIC <- 2*( mllk+np)
+ BIC <- 2* mllk+np*log(n)
+ list(beta=p$beta,sigma=p$sigma,phi=p$phi,rho=p$rho,code=code ,
+ mllk=mllk ,AIC=AIC ,BIC=BIC)
+}
+
+
+
+est<-wl.mle(x=dse,m=length(g),b=b,g=g,beta0=2,sigma0=0.1,phi0=0.4,rho0=0.2)
+
+
+gt<-matrix()
+xt<-matrix()
+gt[1]<-rnorm(1,0,sqrt(est$sigmasq/(1-est$phi^2)))
+#gt[1]<-dse[1]
+xt[1]<-log(est$beta)+gt[1]/2
+for(i in 2:2071){
+gt[i]<-est$phi*gt[i-1]+est$rho*sqrt(est$sigmasq)*+sqrt(est$sigmasq*(1-est$rho^2))*rnorm(1,0,1)
+xt[i]<-log(est$beta)+(gt[i]/2)+rnorm(1)
+}
+
+
+
